@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Config Filter Tool</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #121214;
+            color: #e1e1e6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #ffffff;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            background-color: #202024;
+            border: 1px solid #323238;
+            border-radius: 6px;
+            color: #e1e1e6;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 14px;
+            box-sizing: border-box;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #00b37e;
+        }
+        button {
+            background-color: #00b37e;
+            color: #ffffff;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #00875f;
+        }
+        .output-container {
+            display: none;
+        }
+        .output-container.active {
+            display: block;
+        }
+        .label {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #a8a8b3;
+        }
+        .copy-btn {
+            background-color: #29292e;
+            border: 1px solid #323238;
+            color: #e1e1e6;
+            margin-top: -5px;
+            margin-bottom: 15px;
+        }
+        .copy-btn:hover {
+            background-color: #323238;
+        }
+        .error {
+            color: #f75a68;
+            font-size: 14px;
+            margin-bottom: 15px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Configuration Filter Utility</h1>
+    
+    <div class="label">Paste original configuration here:</div>
+    <textarea id="inputConfig" placeholder="Paste your messy YAML config here..."></textarea>
+    
+    <button id="processBtn" onclick="processConfiguration()">Convert Configuration</button>
+    
+    <div id="errorMessage" class="error"></div>
+    
+    <div id="outputSection" class="output-container">
+        <div class="label">Cleaned configuration (Ready to use):</div>
+        <textarea id="outputConfig" readonly></textarea>
+        <button class="copy-btn" id="copyBtn" onclick="copyToClipboard()">Copy to Clipboard</button>
+    </div>
+</div>
+
+<script>
+    function processConfiguration() {
+        const inputArea = document.getElementById('inputConfig').value;
+        const errorDiv = document.getElementById('errorMessage');
+        const outputSection = document.getElementById('outputSection');
+        const outputArea = document.getElementById('outputConfig');
+        
+        errorDiv.style.display = 'none';
+        outputSection.classList.remove('active');
+
+        if (!inputArea.trim()) {
+            showError('Please paste the configuration text.');
+            return;
+        }
+
+        // Split config into separate proxy blocks by dash marker
+        const blocks = inputArea.split(/^\s*-\s+/m);
+        let vlessBlock = "";
+
+        // Search for the block that relates to VLESS
+        for (let block of blocks) {
+            if (block.includes("type: vless") || block.includes("VLESS")) {
+                vlessBlock = block;
+                break;
+            }
+        }
+
+        if (!vlessBlock) {
+            showError('Invalid configuration format: VLESS section not found.');
+            return;
+        }
+
+        // Dynamic extraction of all parameters from the found VLESS block
+        const uuidMatch = vlessBlock.match(/uuid:\s*([^\s\n"'\s]+)/);
+        const serverMatch = vlessBlock.match(/server:\s*([^\s\n"'\s]+)/);
+        const portMatch = vlessBlock.match(/port:\s*([^\s\n"'\s]+)/);
+        const publicKeyMatch = vlessBlock.match(/public-key:\s*([^\s\n"'\s]+)/);
+        const shortIdMatch = vlessBlock.match(/short-id:\s*([^\s\n"'\s]+)/);
+        const servernameMatch = vlessBlock.match(/servername:\s*([^\s\n"'\s]+)/);
+        const flowMatch = vlessBlock.match(/flow:\s*([^\s\n"'\s]+)/);
+        const fingerprintMatch = vlessBlock.match(/client-fingerprint:\s*([^\s\n"'\s]+)/);
+        const rawNameMatch = vlessBlock.match(/name:\s*["']?([^"'\n]+)["']?/);
+
+        if (!uuidMatch || !serverMatch || !portMatch) {
+            showError('Failed to extract essential configuration parameters.');
+            return;
+        }
+
+        // Assembly of values into variables
+        const uuid = uuidMatch[1].trim();
+        const server = serverMatch[1].trim();
+        const port = portMatch[1].trim();
+        const publicKey = publicKeyMatch ? publicKeyMatch[1].trim() : "";
+        const shortId = shortIdMatch ? shortIdMatch[1].trim() : "";
+        const servername = servernameMatch ? servernameMatch[1].trim() : "";
+        const flow = flowMatch ? flowMatch[1].trim() : "xtls-rprx-vision";
+        const fingerprint = fingerprintMatch ? fingerprintMatch[1].trim() : "chrome";
+        
+        // Clean name from emojis, colons and system tags like :recycle:
+        let cleanName = rawNameMatch ? rawNameMatch[1].trim() : "Proxy-Connection";
+        cleanName = cleanName.replace(/[\u{1F300}-\u{1F9FF}]/gu, ""); // Remove emojis
+        cleanName = cleanName.replace(/:[a-zA-Z0-9_]+:/g, "");        // Remove shortcodes like :recycle:
+        cleanName = cleanName.replace(/[:]/g, "");                    // Remove remaining colons
+        cleanName = cleanName.trim();
+
+        // Form fully dynamic YAML without hardcoding
+        const cleanYaml = `mode: Global
+port: 7890
+
+proxies:
+  - client-fingerprint: ${fingerprint}
+    flow: ${flow}
+    name: "${cleanName}"
+    network: tcp
+    port: ${port}
+    reality-opts:
+      public-key: ${publicKey}
+      short-id: ${shortId}
+    server: ${server}
+    servername: ${servername}
+    tcp-opts:
+      ip-version: dual
+    tls: true
+    type: vless
+    udp: true
+    uuid: ${uuid}
+
+rules: []
+
+proxy-groups:
+  - name: Automatic
+    type: url-test
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    proxies:
+      - "${cleanName}"`;
+
+        outputArea.value = cleanYaml;
+        outputSection.classList.add('active');
+    }
+
+    function showError(message) {
+        const errorDiv = document.getElementById('errorMessage');
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+    }
+
+    function copyToClipboard() {
+        const outputArea = document.getElementById('outputConfig');
+        outputArea.select();
+        document.execCommand('copy');
+        
+        const copyBtn = document.getElementById('copyBtn');
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+            copyBtn.textContent = 'Copy to Clipboard';
+        }, 2000);
+    }
+</script>
+
+</body>
+</html>

@@ -336,8 +336,8 @@
             throw new Error('no valid vless:// or trojan:// links found');
         }
 
-        parsed.forEach(p => {
-            p.proxyName = p.tag || genName(p);
+        parsed.forEach((p, i) => {
+            p.proxyName = p.tag || genName(p, i + 1);
         });
 
         if (statusDiv) {
@@ -352,10 +352,15 @@
         return parsed;
     }
 
-    function genName(p) {
-        const s = p.security === 'reality' ? 'REALITY' : p.security === 'tls' ? 'TLS' : '';
-        const n = p.network.toUpperCase();
-        return s ? s + '-' + n : p.type.toUpperCase() + '-' + n;
+    function genName(p, idx) {
+        const num = String(idx).padStart(2, '0');
+        if (p.security === 'reality') {
+            if (p.network === 'tcp') return num + ' Reality TCP';
+            return num + ' Reality ' + p.network.toUpperCase();
+        }
+        if (p.type === 'trojan') return num + ' Trojan';
+        if (p.security === 'tls') return num + ' TLS ' + p.network.toUpperCase();
+        return num + ' ' + p.type.toUpperCase();
     }
 
     function parseVless(input) {
@@ -510,17 +515,17 @@ blocks +
 '  - PROCESS-NAME,prisma.exe,DIRECT\n' +
 '  - PROCESS-NAME,Prisma,DIRECT\n' +
 '  - PROCESS-NAME,prisma-browser.exe,DIRECT\n' +
-'  - MATCH,Global\n' +
+'  - MATCH,Proxy\n' +
 '\n' +
 'proxy-groups:\n' +
-'  - name: Global\n' +
+'  - name: Proxy\n' +
 '    type: select\n' +
 '    proxies:\n' +
-'      - Automatic\n' +
+'      - Auto\n' +
 '      - DIRECT\n' +
 names.map(n => '      - "' + n + '"').join('\n') + '\n' +
 '\n' +
-'  - name: Automatic\n' +
+'  - name: Auto\n' +
 '    type: url-test\n' +
 '    url: http://www.gstatic.com/generate_204\n' +
 '    interval: 300\n' +
@@ -550,16 +555,19 @@ names.map(n => '      - "' + n + '"').join('\n');
             return lines.join('\n');
         }
 
+        const isReality = !!(p.publicKey || p.shortId);
+
         let lines = [
             '  - client-fingerprint: ' + (p.fp || 'chrome')
         ];
-        if (p.flow) lines.push('    flow: ' + p.flow);
+        if (p.network === 'tcp' && isReality) {
+            lines.push('    flow: xtls-rprx-vision');
+        }
         lines.push('    name: "' + p.proxyName + '"');
         lines.push('    network: ' + p.network);
         lines.push('    port: ' + p.port);
 
-        const hasReality = p.publicKey || p.shortId;
-        if (hasReality) {
+        if (isReality) {
             lines.push('    reality-opts:');
             if (p.publicKey) lines.push('      public-key: ' + p.publicKey);
             if (p.shortId) lines.push('      short-id: ' + p.shortId);
